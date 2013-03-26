@@ -14,6 +14,7 @@ namespace MvcIntegrationTestFramework.Browsing
         private readonly string httpVerbName;
         private readonly NameValueCollection formValues;
         private readonly NameValueCollection headers;
+        private readonly string serializedData;
 
         public SimulatedWorkerRequest(string page, string query, TextWriter output, HttpCookieCollection cookies, string httpVerbName, NameValueCollection formValues, NameValueCollection headers)
             : base(page, query, output)
@@ -21,7 +22,16 @@ namespace MvcIntegrationTestFramework.Browsing
             this.cookies = cookies;
             this.httpVerbName = httpVerbName;
             this.formValues = formValues;
-            this.headers = headers;
+            this.headers = headers ?? new NameValueCollection();
+        }
+
+        public SimulatedWorkerRequest(string page, string query, TextWriter output, HttpCookieCollection cookies, string httpVerbName, string serializedData, NameValueCollection headers)
+          : base(page, query, output)
+        {
+          this.cookies = cookies;
+          this.httpVerbName = httpVerbName;
+          this.serializedData = serializedData;
+          this.headers = headers ?? new NameValueCollection();
         }
 
         public override string GetHttpVerbName()
@@ -32,31 +42,25 @@ namespace MvcIntegrationTestFramework.Browsing
         public override string GetKnownRequestHeader(int index)
         {
             // Override "Content-Type" header for POST requests, otherwise ASP.NET won't read the Form collection
-            if (index == 12)
+            if (index == HeaderContentType)
                 if (string.Equals(httpVerbName, "post", StringComparison.OrdinalIgnoreCase))
-                    return "application/x-www-form-urlencoded";
+                    return headers["Content-Type"] ?? "application/x-www-form-urlencoded";
 
             switch (index) {
-                case 0x19:
+                case HeaderCookie:
                     return MakeCookieHeader();
                 default:
-                    if (headers == null)
-                        return null;
                     return headers[GetKnownRequestHeaderName(index)];
             }
         }
 
         public override string GetUnknownRequestHeader(string name)
         {
-            if(headers == null)
-                return null;
             return headers[name];
         }
 
         public override string[][] GetUnknownRequestHeaders()
         {
-            if (headers == null)
-                return null;
             var unknownHeaders = from key in headers.Keys.Cast<string>()
                                  let knownRequestHeaderIndex = GetKnownRequestHeaderIndex(key)
                                  where knownRequestHeaderIndex < 0
@@ -66,9 +70,14 @@ namespace MvcIntegrationTestFramework.Browsing
 
         public override byte[] GetPreloadedEntityBody()
         {
-            if(formValues == null)
+            if(formValues == null && string.IsNullOrWhiteSpace(serializedData))
                 return base.GetPreloadedEntityBody();
 
+            if (!string.IsNullOrWhiteSpace(serializedData))
+            {
+                return Encoding.UTF8.GetBytes(serializedData);
+            }
+            
             var sb = new StringBuilder();
             foreach (string key in formValues)
                 sb.AppendFormat("{0}={1}&", HttpUtility.UrlEncode(key), HttpUtility.UrlEncode(formValues[key]));

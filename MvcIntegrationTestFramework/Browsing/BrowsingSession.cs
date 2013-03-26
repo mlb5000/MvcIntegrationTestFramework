@@ -14,6 +14,8 @@ namespace MvcIntegrationTestFramework.Browsing
     {
         public HttpSessionState Session { get; private set; }
         public HttpCookieCollection Cookies { get; private set; }
+        private string Authorization { get; set; }
+        private string ContentType { get; set; }
 
         public BrowsingSession()
         {
@@ -23,6 +25,20 @@ namespace MvcIntegrationTestFramework.Browsing
         public RequestResult Get(string url)
         {
             return ProcessRequest(url, HttpVerbs.Get, new NameValueCollection());
+        }
+
+        public void BasicAuthentication(string username, string password)
+        {
+            Authorization = EncodeTo64(string.Join(":", new[] {username, password}));
+        }
+
+        static public string EncodeTo64(string toEncode)
+        {
+            byte[] toEncodeAsBytes
+                  = new System.Text.UTF8Encoding().GetBytes(toEncode);
+            string returnValue
+                  = Convert.ToBase64String(toEncodeAsBytes);
+            return returnValue;
         }
 
         /// <summary>
@@ -51,6 +67,12 @@ namespace MvcIntegrationTestFramework.Browsing
             return ProcessRequest(url, HttpVerbs.Post, formNameValueCollection);
         }
 
+        public RequestResult PostRaw(string url, string serializedData, string contentType)
+        {
+          ContentType = contentType;
+          return ProcessRequest(url, HttpVerbs.Post, serializedData, null);
+        }
+
         private RequestResult ProcessRequest(string url, HttpVerbs httpVerb = HttpVerbs.Get, NameValueCollection formValues = null)
         {
             return ProcessRequest(url, httpVerb, formValues, null);
@@ -60,6 +82,15 @@ namespace MvcIntegrationTestFramework.Browsing
         {
             if (url == null) throw new ArgumentNullException("url");
 
+            headers = headers ?? new NameValueCollection();
+            if (!string.IsNullOrWhiteSpace(Authorization))
+            {
+                headers.Add("Authorization", "Basic " + Authorization);
+            }
+            if (!string.IsNullOrWhiteSpace(ContentType))
+            {
+              headers.Add("Content-Type", ContentType);
+            }
             // Fix up URLs that incorrectly start with / or ~/
             if (url.StartsWith("~/"))
                 url = url.Substring(2);
@@ -91,6 +122,53 @@ namespace MvcIntegrationTestFramework.Browsing
                 ResultExecutedContext = LastRequestData.ResultExecutedContext,
                 Response = LastRequestData.Response,
             };
+        }
+
+        private RequestResult ProcessRequest(string url, HttpVerbs httpVerb, string serializedData , NameValueCollection headers)
+        {
+          if (url == null) throw new ArgumentNullException("url");
+
+          headers = headers ?? new NameValueCollection();
+          if (!string.IsNullOrWhiteSpace(Authorization))
+          {
+            headers.Add("Authorization", "Basic " + Authorization);
+          }
+          if (!string.IsNullOrWhiteSpace(ContentType))
+          {
+            headers.Add("Content-Type", ContentType);
+          }
+          // Fix up URLs that incorrectly start with / or ~/
+          if (url.StartsWith("~/"))
+            url = url.Substring(2);
+          else if (url.StartsWith("/"))
+            url = url.Substring(1);
+
+          // Parse out the querystring if provided
+          string query = "";
+          int querySeparatorIndex = url.IndexOf("?");
+          if (querySeparatorIndex >= 0)
+          {
+            query = url.Substring(querySeparatorIndex + 1);
+            url = url.Substring(0, querySeparatorIndex);
+          }
+
+          // Perform the request
+          LastRequestData.Reset();
+          var output = new StringWriter();
+          string httpVerbName = httpVerb.ToString().ToLower();
+          var workerRequest = new SimulatedWorkerRequest(url, query, output, Cookies, httpVerbName, serializedData, headers);
+          HttpRuntime.ProcessRequest(workerRequest);
+
+          // Capture the output
+          AddAnyNewCookiesToCookieCollection();
+          Session = LastRequestData.HttpSessionState;
+          return new RequestResult
+          {
+            ResponseText = output.ToString(),
+            ActionExecutedContext = LastRequestData.ActionExecutedContext,
+            ResultExecutedContext = LastRequestData.ResultExecutedContext,
+            Response = LastRequestData.Response,
+          };
         }
 
         private void AddAnyNewCookiesToCookieCollection()

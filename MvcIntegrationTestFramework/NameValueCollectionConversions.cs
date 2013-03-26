@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Web.Routing;
 
@@ -15,7 +16,7 @@ namespace MvcIntegrationTestFramework
             {
                 if (kvp.Value == null)
                 {
-                    throw new NullReferenceException(kvp.Key);
+                    continue;
                 }
                 if (kvp.Value.GetType().Name.Contains("Anonymous"))
                 {
@@ -32,6 +33,7 @@ namespace MvcIntegrationTestFramework
 
 
             }
+            
             return nvc;
         }
     }
